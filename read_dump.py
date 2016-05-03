@@ -19,6 +19,7 @@ from libmproxy import flow
 import sys
 import json
 import pdb
+import zlib
 
 with open(sys.argv[1], "rb") as logfile:
 
@@ -39,16 +40,27 @@ with open(sys.argv[1], "rb") as logfile:
 			if (hasattr(f.response,"headers")):
 				flow_c = flow_c + 1
 
+				print f.request.path
+				
 				# Append the request path to 'req_list'
 				req_list.append(str(f.request.path))
+
+				# Check if the length of the response is 0
+				if(len(f.response.content) == 0):
+					continue
 
 				# Check whether the response is JSON
 				if (str(f.response.headers["content-type"]).find("json") == -1):
 					continue
 
-				
+				if (str(f.response.headers["content-encoding"]).find("gzip") != -1):
+					r_str = str(zlib.decompress(f.response.content, 16+zlib.MAX_WBITS))
+				else:
+					r_str = str(f.response.content)
+
+				#pdb.set_trace()
 				# Append the JSON to 'json_list'
-				json_result = json.loads(str(f.response.content))
+				json_result = json.loads(r_str)
 				json_list.append(json_result)
 
 				# Record the sequence number of the response
@@ -62,21 +74,45 @@ with open(sys.argv[1], "rb") as logfile:
 			js_c = 0
 			for js in json_list:
 				js_c = js_c + 1	
-				for key ,value in js.iteritems():
+				#pdb.set_trace()
 
-					# Check whether the request path exists in the JSON or not
-					if(str(value).find(req) != -1):
+				if type(js) is list:
+					if(str(str(js).encode('utf-8')).find(str(req).encode('utf-8')) != -1):
 
 						# Check whether the request path appear after the response
 						if(json_num_list[js_c-1] < req_c):
 				
 							# Print the information
 							print '[FIND] An URL in the response exists in the successor request'
-							print 'Response No.: ', json_num_list[js_c-1], ',  Request No.: ', req_c
+							print 'Resp No.: ', json_num_list[js_c-1], ',  Req No.: ', req_c
 							print 'The URL: ', req
 							print 'JSON in the response: ', value
 							print '\n'
 							found = found + 1
+				else:
+					for key ,value in js.iteritems():
+
+						flag = 0
+						if(isinstance(value, basestring) != True):
+							if(str(str(value).encode('utf-8')).find(str(req).encode('utf-8')) != -1):
+								flag = 1
+						else:
+							if(str(value.encode('utf-8')).find(str(req).encode('utf-8')) != -1):
+								flag = 1
+
+						# Check whether the request path exists in the JSON or not
+						if(flag == 1):
+
+							# Check whether the request path appear after the response
+							if(json_num_list[js_c-1] < req_c):
+					
+								# Print the information
+								print '[FIND] An URL in the response exists in the successor request'
+								print 'Resp No.: ', json_num_list[js_c-1], ',  Req No.: ', req_c
+								print 'The URL: ', req
+								print 'JSON in the response: ', value
+								print '\n'
+								found = found + 1
 						
 				
 		print 'Total number of flows: ', flow_c
